@@ -436,7 +436,7 @@ function renderShell() {
   $('#nav').innerHTML = NAV.filter(([k]) => ALLOW[k]()).map(([k, i, l]) => {
     const on = (ROUTES[CUR].nav || CUR) === k;
     const badge = k === 'stock' && nAlerts ? `<span class="badge">${nAlerts}</span>` : k === 'inventaire' && invOpen ? `<span class="badge g">En cours</span>` : k === 'caisse' && !S.register.open ? `<span class="badge">Fermée</span>` : '';
-    return `<a href="#/${k}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>${ic(i)}${l}${badge}</a>`;
+    return `<a href="#/${k}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''} title="${l}">${ic(i)}<span class="lbl">${l}</span>${badge}</a>`;
   }).join('');
   const d = DEPOTS.find(x => x.id === S.depot);
   $('#site-card').innerHTML = `<small>Point de vente actuel</small><div class="site-row"><div><div style="font-size:14px;font-weight:600">${esc(d.site)}</div><small>${esc(d.name)}</small></div>${me().depot === 'all' ? ic('chev') : ''}</div>`;
@@ -455,6 +455,7 @@ function route() {
   closePop(); document.body.classList.remove('nav-open');
   $('#view').innerHTML = ROUTES[key].r(ARG);
   ROUTES[key].m && ROUTES[key].m(ARG);
+  $('#view').classList.toggle('has-fab', key === 'caisse' && S.register.open);
   renderShell();
 }
 function refresh() { const y = window.scrollY; route(); window.scrollTo(0, y); save(); }
@@ -536,7 +537,7 @@ function pStock() {
     `<button class="btn" type="button" data-a="exportStock">${ic('down')}Exporter</button>
      ${`<button class="btn" type="button" data-a="move" data-t="tr">${ic('swap')}Transfert</button><button class="btn ghost-r" type="button" data-a="move" data-t="out">${ic('minus')}Sortie</button><button class="btn ghost-g" type="button" data-a="move" data-t="in">${ic('plus')}Entrée</button>`}
      <button class="btn pri" type="button" data-a="newProduct">${ic('plus')}Nouveau produit</button>`)
-  + `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
+  + `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))">
       ${mini('', 'Références actives', 'var(--ink)')}${mini('rupture', 'En rupture', '#B42318')}${mini('seuil', 'Sous le seuil minimum', '#B4580F')}${mini('perem', 'Péremption sous 30 jours', '#1D5FA8')}
     </div>
     <section class="card" style="overflow:hidden">
@@ -677,7 +678,8 @@ function pCaisse() {
         <div class="pos-grid" id="pos-grid">${posGrid()}</div>
       </section>
       <section class="card aside ticket" aria-label="Ticket en cours" id="pos-ticket">${posTicket()}</section>
-    </div>`;
+    </div>
+    <button class="pos-fab" type="button" id="pos-fab" data-a="toTicket">${posFab()}</button>`;
 }
 function posList() { const q = S.ui.posQ.trim().toLowerCase(), c = S.ui.posCat; return S.products.filter(p => (!c || (c === 'promo' ? p.promo : p.cat === c)) && (!q || (p.name + ' ' + p.ref + ' ' + p.barcode).toLowerCase().includes(q))); }
 function posGrid() {
@@ -711,7 +713,8 @@ function posTicket() {
       <div style="display:flex;gap:8px"><button class="btn" type="button" style="flex:1" data-a="cartDiscount"${c.lines.length ? '' : ' disabled'}>${ic('percent')}Remise</button><button class="btn" type="button" style="flex:1" data-a="hold"${c.lines.length ? '' : ' disabled'}>${ic('pause')}Mettre en attente</button></div>
     </div>`;
 }
-function renderPos(grid = true) { if (grid && $('#pos-grid')) $('#pos-grid').innerHTML = posGrid(); if ($('#pos-ticket')) $('#pos-ticket').innerHTML = posTicket(); save(); }
+function posFab() { const t = cartTotals(); return `${ic('cart', 20)}<span>${t.items ? t.items + ' article' + (t.items > 1 ? 's' : '') : 'Ticket vide'}</span><strong class="num">${fmt(t.total)} FCFA</strong>${ic('dn', 18)}`; }
+function renderPos(grid = true) { if (grid && $('#pos-grid')) $('#pos-grid').innerHTML = posGrid(); if ($('#pos-ticket')) $('#pos-ticket').innerHTML = posTicket(); if ($('#pos-fab')) $('#pos-fab').innerHTML = posFab(); save(); }
 function mountCaisse() { if (S.register.open && !MS.length) setTimeout(() => $('#pos-q')?.focus(), 30); }
 
 /* 7.6 Ventes & factures */
@@ -733,7 +736,7 @@ function pVentes() {
       </tbody></table></div>
       <div class="tfoot"><span>${list.length} document${list.length > 1 ? 's' : ''}</span><span>Total : <strong class="num" style="color:var(--ink)">${F(sum(list, docTotal))}</strong>${type === 'facture' ? ` · reste dû <strong class="num" style="color:var(--or-t)">${F(sum(list, docLeft))}</strong>` : ''}</span></div>
     </section>
-    <section class="card aside" style="overflow:hidden;display:flex;flex-direction:column;min-width:min(100%,400px)">${sel ? docPanel(sel) : `<div class="placeholder">${ic('doc', 36)}<span>Sélectionnez un document pour l'afficher.</span></div>`}</section></div>`;
+    <section class="card aside" id="doc-panel" style="overflow:hidden;display:flex;flex-direction:column;min-width:min(100%,400px)">${sel ? docPanel(sel) : `<div class="placeholder">${ic('doc', 36)}<span>Sélectionnez un document pour l'afficher.</span></div>`}</section></div>`;
 }
 function docHTML(d) {
   const c = cli(d.client), s = docStatus(d), co = S.company;
@@ -787,7 +790,7 @@ function pClients() {
       <div class="tbl-wrap"><table class="tbl"><thead><tr>${isC ? '<th scope="col">Client</th><th scope="col">Type</th><th scope="col">Téléphone</th><th scope="col" class="r">Achats (12 mois)</th><th scope="col" class="r">Solde dû</th><th scope="col">État</th>' : '<th scope="col">Fournisseur</th><th scope="col">Catégorie</th><th scope="col">Téléphone</th><th scope="col">Ville</th><th scope="col" class="r">Montant dû</th><th scope="col">État</th>'}</tr></thead><tbody>
       ${rows.map(x => isC ? clientRow(x, selId) : `<tr class="click${x.id === selId ? ' sel' : ''}" data-a="selParty" data-id="${x.id}" tabindex="0"><td><div class="pcell">${pav(x.name)}<strong>${esc(x.name)}</strong></div></td><td>${esc(x.cat)}</td><td class="num">${esc(x.phone)}</td><td>${esc(x.city)}</td><td class="r num b ${x.due ? 'c-info' : 'muted'}">${fmt(x.due)}</td><td>${x.due ? chip('À payer', 'info') : chip('Soldé', 'ok')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucun résultat.</td></tr>'}
       </tbody></table></div></section>
-      <section class="card pad aside stack" style="gap:16px">${isC ? clientPanel(cli(u.selClient)) : supplierPanel(sup(u.selSup))}</section></div>`;
+      <section class="card pad aside stack" id="party-panel" style="gap:16px">${isC ? clientPanel(cli(u.selClient)) : supplierPanel(sup(u.selSup))}</section></div>`;
 }
 function clientState(c) { const b = clientBalance(c.id); if (!b) return ['À jour', 'ok']; if (clientOverdue(c.id)) return ['En retard', 'bad']; if (S.docs.some(d => d.client === c.id && d.type === 'facture' && d.schedule && docLeft(d))) return ['Échéancier', 'warn']; return ['Crédit', 'info']; }
 function clientRow(c, selId) { const b = clientBalance(c.id), st = clientState(c); const buys = c.hist + sum(S.docs.filter(d => d.client === c.id && (d.type === 'facture' || d.type === 'ticket')), docTotal); return `<tr class="click${c.id === selId ? ' sel' : ''}" data-a="selParty" data-id="${c.id}" tabindex="0"><td><div class="pcell">${pav(c.name)}<strong>${esc(c.name)}</strong></div></td><td>${esc(c.type)}</td><td class="num">${esc(c.phone)}</td><td class="r num">${fmt(buys)}</td><td class="r num b ${b ? 'c-' + (st[1] === 'bad' ? 'bad' : st[1]) : 'muted'}">${fmt(b)}</td><td>${chip(st[0], st[1])}</td></tr>`; }
@@ -1562,7 +1565,8 @@ const A = {
   checkout,
   // Ventes
   docType: ds => { S.ui.docType = ds.t; S.ui.selDoc = null; S.ui.docSt = ''; refresh(); },
-  selDoc: ds => { S.ui.selDoc = ds.id; refresh(); },
+  selDoc: ds => { S.ui.selDoc = ds.id; refresh(); revealPanel('#doc-panel'); },
+  toTicket: () => $('#pos-ticket')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
   openDoc: ds => { const d = S.docs.find(x => x.id === ds.id); if (!ALLOW.ventes()) return; S.ui.docType = d.type; S.ui.selDoc = d.id; S.ui.docQ = ''; S.ui.docSt = ''; go('ventes'); },
   newDoc: ds => mDocEditor(ds.t),
   convert: ds => mDocEditor('facture', S.docs.find(x => x.id === ds.id)),
@@ -1576,7 +1580,7 @@ const A = {
   exportDocs: () => dlCSV(`${S.ui.docType}s.csv`, [['N°', 'Date', 'Client', 'Tarif', 'Montant', 'Payé', 'Reste', 'Statut'], ...S.docs.filter(d => d.type === S.ui.docType).map(d => [d.num, fmtD(d.date), cli(d.client).name, d.tarif, docTotal(d), docPaid(d), docLeft(d), docStatus(d)[0]])]),
   // Clients
   party: ds => { S.ui.party = ds.p; refresh(); },
-  selParty: ds => { if (ds.id.startsWith('s')) { S.ui.party = 'fournisseurs'; S.ui.selSup = ds.id; } else { S.ui.party = 'clients'; S.ui.selClient = ds.id; } refresh(); },
+  selParty: ds => { if (ds.id.startsWith('s')) { S.ui.party = 'fournisseurs'; S.ui.selSup = ds.id; } else { S.ui.party = 'clients'; S.ui.selClient = ds.id; } refresh(); revealPanel('#party-panel'); },
   newParty: ds => mParty(ds.k, null, ds.from === 'pos' ? id => { S.cart.client = id; renderPos(false); } : null),
   editParty: ds => mParty(ds.k, ds.id),
   clientPay: ds => mClientPay(ds.id), remind: ds => mRemind(ds.id), statement: ds => printStatement(ds.id), supPay: ds => mSupPay(ds.id),
@@ -1652,6 +1656,23 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { const s = $('[data-search]'); if (s) { e.preventDefault(); s.focus(); s.select(); } }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') { e.preventDefault(); showLock('lock'); }
 });
+
+/* ---------------------------------------------------------
+   Adaptatif : étiquettes des tableaux (affichés en cartes sur petit écran)
+--------------------------------------------------------- */
+function labelTables() {
+  $$('table.tbl').forEach(t => {
+    if (t.closest('#print-area')) return;
+    const hs = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    if (!hs.length) return;
+    t.setAttribute('data-cards', '');
+    t.querySelectorAll('tbody tr').forEach(tr => { let i = 0; [...tr.children].forEach(td => { const span = +td.getAttribute('colspan') || 1; if (!td.hasAttribute('data-label')) td.setAttribute('data-label', span > 1 ? '' : (hs[i] || '')); i += span; }); });
+  });
+}
+let LBL = 0;
+new MutationObserver(() => { if (!LBL) LBL = requestAnimationFrame(() => { LBL = 0; labelTables(); }); }).observe(document.body, { childList: true, subtree: true });
+function revealPanel(sel) { if (window.innerWidth <= 960) requestAnimationFrame(() => $(sel)?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }
+window.addEventListener('resize', () => { if (window.innerWidth > 960) document.body.classList.remove('nav-open'); closePop(); });
 
 /* ---------------------------------------------------------
    11. Démarrage
